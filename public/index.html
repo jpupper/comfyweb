@@ -5,18 +5,65 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="css/style.css">
     <title>AI generation</title>
+    <style>
+        .listen-button {
+            margin-top: 10px;
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .listen-button.active {
+            background-color: #f44336;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .status-indicator {
+            margin-top: 10px;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            display: none;
+        }
+        .status-indicator.connected {
+            display: block;
+            background-color: #dff0d8;
+            color: #3c763d;
+        }
+        .status-indicator.error {
+            display: block;
+            background-color: #f2dede;
+            color: #a94442;
+        }
+        .status-indicator.polling {
+            display: block;
+            background-color: #d9edf7;
+            color: #31708f;
+        }
+    </style>
 </head>
 <body>
     <div class="container">
         <div class="form-group">
             <textarea name="textarea" id="prompt" placeholder="Ingrese su prompt"></textarea>
         </div>
-        <button id="generateButton">Generar Imagen</button>
+        <div class="controls">
+            <button id="generateButton">Generar Imagen</button>
+            <button id="listenButton" class="listen-button">START LISTENING</button>
+        </div>
+        <div id="firebaseStatus" class="status-indicator">Firebase status will appear here</div>
         <div id="imageContainer">
             <!-- Aquí se insertará dinámicamente la imagen -->
         </div>
     </div>
 
+    <script src="js/firebasetocomfy.js"></script>
     <script src="js/script.js"></script>
 </body>
 </html>
