@@ -32,7 +32,7 @@ wsComfy.on('open', () => {
     console.log('WebSocket connection established');
 });
 
-const promptDetails = {};  // Modificado para almacenar detalles de prompt y equipo
+const promptDetails = {};  // Almacena detalles del prompt
 
 wsComfy.on('message', async (data) => {
     const messageString = data.toString();
@@ -42,13 +42,13 @@ wsComfy.on('message', async (data) => {
 
     if (message.type === 'executed') {
         const details = promptDetails[message.data.prompt_id];
-        console.log(`Execution completed for prompt ID: ${message.data.prompt_id} for team: ${details.equipo}`);
+        console.log(`Execution completed for prompt ID: ${message.data.prompt_id}`);
 
         const images = message.data.output.images;
         console.log('Images:', images);
 
         for (const image of images) {
-            const subfolder = details.equipo ? `equipo${details.equipo}` : '';
+            const subfolder = '';
             const imageUrl = `http://${serverAddress}/view?filename=${encodeURIComponent(image.filename)}&subfolder=${encodeURIComponent(subfolder)}&type=${encodeURIComponent(image.type)}`;
             console.log('Downloading image from:', imageUrl);
             const filename = path.join(__dirname, 'public', 'imagenes', subfolder, image.filename);
@@ -56,11 +56,10 @@ wsComfy.on('message', async (data) => {
             console.log(`Downloaded image: ${filename}`);
 
             wss.clients.forEach(client => {
-                if (client.readyState === WebSocket.OPEN && client.equipo === details.equipo) {
+                if (client.readyState === WebSocket.OPEN) {
                     client.send(JSON.stringify({
                         type: 'image_generated',
                         url: `/imagenes/${subfolder}/${image.filename}`,
-                        equipo: details.equipo,
                         prompt: details.prompt  // Envío del prompt original
                     }));
                 }
@@ -75,9 +74,8 @@ wss.on('connection', async (ws, req) => {
         const message = JSON.parse(data);
         if (message.type === 'generarImagen') {
             console.log(`Prompt received: ${message.prompt}`);
-            ws.equipo = message.equipo;
-            const promptId = await generarImagen(message.prompt, message.equipo);
-            promptDetails[promptId] = { equipo: message.equipo, prompt: message.prompt }; // Guarda equipo y prompt
+            const promptId = await generarImagen(message.prompt);
+            promptDetails[promptId] = { prompt: message.prompt }; // Guarda prompt
         }
     });
     ws.on('close', () => {
@@ -171,13 +169,13 @@ async function getHistory(promptId) {
 
 async function downloadImage(url, filename, subfolder) {
     return new Promise((resolve, reject) => {
-        const dir = subfolder ? path.join(__dirname, 'public', 'imagenes', subfolder) : path.dirname(filename);
+        const dir = path.dirname(filename);
 
         if (!fs.existsSync(dir)) {
             fs.mkdirSync(dir, { recursive: true });
         }
 
-        const filePath = subfolder ? path.join(dir, path.basename(filename)) : filename;
+        const filePath = filename;
 
         const file = fs.createWriteStream(filePath);
         http.get(url, (response) => {
@@ -190,7 +188,7 @@ async function downloadImage(url, filename, subfolder) {
         });
     });
 }
-async function generarImagen_old(promptText, equipo) {
+async function generarImagen_old(promptText) {
     const promptWorkflow = await readWorkflowAPI();
 	console.log("PROMPT WORKFLOW" + promptWorkflow)
     promptWorkflow["6"]["inputs"]["text"] = promptText;
@@ -198,15 +196,15 @@ async function generarImagen_old(promptText, equipo) {
     const emptyLatentImgNode = promptWorkflow["5"];
     emptyLatentImgNode["inputs"]["batch_size"] = 1;
 
-    promptWorkflow["9"]["inputs"]["filename_prefix"] = equipo ? `equipo${equipo}/ComfyUI` : "ComfyUI";
+    promptWorkflow["9"]["inputs"]["filename_prefix"] = "ComfyUI";
 
     const promptId = await queuePrompt(promptWorkflow);
 
-    console.log(`Queued prompt with ID: ${promptId} for team: ${equipo}`);
+    console.log(`Queued prompt with ID: ${promptId}`);
     return promptId;
 }
 
-async function generarImagen(promptText, equipo) {
+async function generarImagen(promptText) {
     const promptWorkflow = await readWorkflowAPI();
 	console.log("PROMPT WORKFLOW" + promptWorkflow)
     promptWorkflow["6"]["inputs"]["text"] = promptText;
@@ -214,10 +212,10 @@ async function generarImagen(promptText, equipo) {
     const emptyLatentImgNode = promptWorkflow["5"];
     emptyLatentImgNode["inputs"]["batch_size"] = 1;
 
-    promptWorkflow["9"]["inputs"]["filename_prefix"] = equipo ? `equipo${equipo}/ComfyUI` : "ComfyUI";
+    promptWorkflow["9"]["inputs"]["filename_prefix"] = "ComfyUI";
 
     const promptId = await queuePrompt(promptWorkflow);
 
-    console.log(`Queued prompt with ID: ${promptId} for team: ${equipo}`);
+    console.log(`Queued prompt with ID: ${promptId}`);
     return promptId;
 }

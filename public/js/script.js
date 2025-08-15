@@ -1,13 +1,5 @@
-let equiposelect;
-
 var host = '192.168.0.13:8080'; //ESTE ES EL QUE VA A TOUCHDESIGNER
 socket = new WebSocket('ws://' + host);
-
-document.addEventListener('DOMContentLoaded', (event) => {
-    const urlParams = new URLSearchParams(window.location.search);
-    equiposelect = urlParams.get("equipo");
-    console.log("Equipo seleccionado:", equiposelect);
-});
 
 const imageContainer = document.getElementById('imageContainer');
 const ws = new WebSocket(`ws://${window.location.hostname}:${window.location.port}`);
@@ -22,7 +14,6 @@ ws.onmessage = (event) => {
 
 
     if (message.type === 'image_generated' 
-	&& message.equipo === equiposelect
 	&& !message.url.includes('temp')) {
 		
 		
@@ -30,8 +21,7 @@ ws.onmessage = (event) => {
 		socket.send(JSON.stringify({
 			type: 'terminoImagen',
 			prompt: message.prompt,
-			url: message.url,
-			equipo: equiposelect
+			url: message.url
 		}));
 		//ComfyUI_temp_pbbek_00072_.png
         console.log('Imagen generada:', message.url);
@@ -58,5 +48,5 @@ document.getElementById('generateButton').addEventListener('click', () => {
         alert('Por favor, ingrese un prompt.');
         return;
     }
-    ws.send(JSON.stringify({ type: 'generarImagen', prompt, equipo: equiposelect }));
+    ws.send(JSON.stringify({ type: 'generarImagen', prompt }));
 });
