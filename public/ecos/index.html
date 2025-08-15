@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Naturaleza Sintética - Firebase Data</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+        }
+        #data-container {
+            margin-top: 20px;
+        }
+        .data-item {
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #eee;
+            border-radius: 4px;
+        }
+        .loading {
+            text-align: center;
+            color: #7f8c8d;
+        }
+        .error {
+            color: #e74c3c;
+            padding: 10px;
+            background-color: #fadbd8;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Naturaleza Sintética - Datos de Interacciones</h1>
+        
+        <div id="data-container">
+            <h2>Datos de Interacciones</h2>
+            <div id="loading" class="loading">Cargando datos...</div>
+            <div id="data-content"></div>
+        </div>
+        
+        <div style="margin-top: 20px; padding: 10px; background-color: #f8f9fa; border-radius: 5px;">
+            <h3>Información de depuración</h3>
+            <p>Si no se muestran datos, puede ser debido a las reglas de seguridad de Firebase. Abra la consola del navegador (F12) para ver más detalles.</p>
+        </div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        // Import the functions you need from the SDKs you need
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { getFirestore, collection, doc, getDoc, getDocs, query, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        
+        // Your web app's Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyCIsWviA529QBws1KgnPWuJPhn_nAIAYtI",
+            authDomain: "naturaleza-sintetica.firebaseapp.com",
+            databaseURL: "https://naturaleza-sintetica-default-rtdb.firebaseio.com",
+            projectId: "naturaleza-sintetica",
+            storageBucket: "naturaleza-sintetica.firebasestorage.app",
+            messagingSenderId: "422699807182",
+            appId: "1:422699807182:web:848ad08b1b54f1d032fb9f",
+            measurementId: "G-47ED4CEE0E"
+        };
+        
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const analytics = getAnalytics(app);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        
+        // DOM Elements
+        const dataContent = document.getElementById('data-content');
+        const loadingElement = document.getElementById('loading');
+        
+        // Fetch data immediately when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            // Authenticate anonymously first, then fetch data
+            signInAnonymously(auth)
+                .then(() => {
+                    console.log("Autenticación anónima exitosa");
+                    fetchData();
+                })
+                .catch((error) => {
+                    console.error("Error de autenticación anónima:", error);
+                    showError(`Error de autenticación: ${error.message}`);
+                });
+        });
+        
+        // Fetch data from Firebase Firestore
+        async function fetchData() {
+            loadingElement.style.display = 'block';
+            dataContent.innerHTML = '';
+            console.log("Intentando obtener datos de Firestore...");
+            
+            try {
+                // Intentar acceder a la colección de artifacts
+                console.log("Intentando acceder a la colección 'artifacts'");
+                
+                // Primero intentamos con la ruta completa como colección
+                try {
+                    const artifactsPath = 'artifacts/naturaleza-sintetica/public/data/interactions';
+                    console.log(`Intentando acceder a: ${artifactsPath}`);
+                    
+                    const interactionsCollection = collection(db, artifactsPath);
+                    const interactionsSnapshot = await getDocs(interactionsCollection);
+                    
+                    if (!interactionsSnapshot.empty) {
+                        console.log("Datos encontrados en la colección:", interactionsSnapshot);
+                        const interactionsData = {};
+                        interactionsSnapshot.forEach((doc) => {
+                            interactionsData[doc.id] = doc.data();
+                        });
+                        displayData({ interactions: interactionsData });
+                        loadingElement.style.display = 'none';
+                        return;
+                    } else {
+                        console.log("No hay documentos en la colección");
+                    }
+                } catch (error) {
+                    console.log("Error al acceder a la colección completa:", error);
+                }
+                
+                // Intentar acceder como documento
+                try {
+                    const docPath = 'artifacts/naturaleza-sintetica';
+                    console.log(`Intentando acceder al documento: ${docPath}`);
+                    
+                    const docRef = doc(db, docPath);
+                    const docSnap = await getDoc(docRef);
+                    
+                    if (docSnap.exists()) {
+                        console.log("Datos del documento:", docSnap.data());
+                        displayData({ document: docSnap.data() });
+                        loadingElement.style.display = 'none';
+                        return;
+                    } else {
+                        console.log("No existe el documento");
+                    }
+                } catch (error) {
+                    console.log("Error al acceder al documento:", error);
+                }
+                
+                // Intentar acceder a la colección 'artifacts'
+                try {
+                    console.log("Intentando acceder a la colección raíz 'artifacts'");
+                    const artifactsCollection = collection(db, 'artifacts');
+                    const artifactsSnapshot = await getDocs(artifactsCollection);
+                    
+                    if (!artifactsSnapshot.empty) {
+                        console.log("Datos encontrados en la colección 'artifacts':");
+                        const artifactsData = {};
+                        artifactsSnapshot.forEach((doc) => {
+                            console.log(`Documento: ${doc.id}`, doc.data());
+                            artifactsData[doc.id] = doc.data();
+                        });
+                        displayData({ artifacts: artifactsData });
+                        loadingElement.style.display = 'none';
+                        return;
+                    } else {
+                        console.log("No hay documentos en la colección 'artifacts'");
+                    }
+                } catch (error) {
+                    console.log("Error al acceder a la colección 'artifacts':", error);
+                }
+                
+                // Si llegamos aquí, no se encontraron datos
+                console.log("No se encontraron datos en ninguna ruta");
+                dataContent.innerHTML = '<p>No se encontraron datos en Firestore</p>';
+                
+            } catch (error) {
+                console.error("Error al obtener datos de Firestore:", error);
+                showError(`Error al obtener datos: ${error.message}. Verifique las reglas de seguridad de Firebase.`);
+            } finally {
+                loadingElement.style.display = 'none';
+            }
+        }
+        
+        // Display data in the DOM
+        function displayData(data) {
+            console.log("Mostrando datos:", data);
+            
+            if (typeof data === 'object' && data !== null) {
+                // If data is an object, iterate through its properties
+                for (const key in data) {
+                    const item = document.createElement('div');
+                    item.className = 'data-item';
+                    
+                    if (typeof data[key] === 'object' && data[key] !== null) {
+                        // If the property is an object, display it as JSON
+                        item.innerHTML = `<strong>${key}:</strong> <pre>${JSON.stringify(data[key], null, 2)}</pre>`;
+                    } else {
+                        // If the property is a primitive value, display it directly
+                        item.innerHTML = `<strong>${key}:</strong> ${data[key]}`;
+                    }
+                    
+                    dataContent.appendChild(item);
+                }
+            } else {
+                // If data is not an object, display it directly
+                dataContent.innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+            }
+            
+            // Si no hay contenido después de procesar, mostrar mensaje
+            if (dataContent.children.length === 0) {
+                dataContent.innerHTML = '<p>No se pudieron procesar los datos</p>';
+            }
+        }
+        
+        // Show error message
+        function showError(message) {
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error';
+            errorDiv.innerHTML = `<p>${message}</p>`;
+            dataContent.appendChild(errorDiv);
+        }
+    </script>
+</body>
+</html>

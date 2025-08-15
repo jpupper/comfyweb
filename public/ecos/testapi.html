@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test API - Naturaleza Sintética</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        h1, h2 {
+            color: #2c3e50;
+        }
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-bottom: 20px;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        pre {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+        }
+        .loading {
+            display: none;
+            color: #7f8c8d;
+            margin-bottom: 10px;
+        }
+        .error {
+            color: #e74c3c;
+            background-color: #fadbd8;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Test API - Naturaleza Sintética</h1>
+        
+        <div>
+            <h2>Probar API Endpoint</h2>
+            <button id="fetch-btn">Obtener Datos</button>
+            <div id="loading" class="loading">Cargando datos...</div>
+            <div id="error-container"></div>
+            <pre id="result">Los resultados aparecerán aquí...</pre>
+        </div>
+        
+        <div>
+            <h2>Cómo usar la API</h2>
+            <p>Para obtener los datos de Firestore, realiza una solicitud GET a:</p>
+            <pre>http://localhost/ecos2/api.php</pre>
+            
+            <p>Para especificar una ruta personalizada:</p>
+            <pre>http://localhost/ecos2/api.php?path=tu/ruta/personalizada</pre>
+            
+            <p>Por defecto, la API devuelve los datos de:</p>
+            <pre>artifacts/naturaleza-sintetica/public/data/interactions</pre>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('fetch-btn').addEventListener('click', fetchData);
+        
+        function fetchData() {
+            const resultElement = document.getElementById('result');
+            const loadingElement = document.getElementById('loading');
+            const errorContainer = document.getElementById('error-container');
+            
+            // Mostrar indicador de carga
+            loadingElement.style.display = 'block';
+            resultElement.textContent = 'Cargando...';
+            errorContainer.innerHTML = '';
+            
+            // Realizar la solicitud a la API
+            fetch('api.php')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`Error HTTP: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // Mostrar los datos
+                    resultElement.textContent = JSON.stringify(data, null, 2);
+                })
+                .catch(error => {
+                    // Mostrar error
+                    errorContainer.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+                    resultElement.textContent = 'Error al cargar los datos.';
+                })
+                .finally(() => {
+                    // Ocultar indicador de carga
+                    loadingElement.style.display = 'none';
+                });
+        }
+    </script>
+</body>
+</html>
