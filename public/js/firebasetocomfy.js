@@ -9,12 +9,22 @@ let pollingInterval = null;
 let lastProcessedId = null;
 let pollingDelay = 5000; // 5 seconds between polls
 let statusElement = null;
+let previousData = null; // Store previous data for comparison
 
 // Initialize Firebase connection
 async function initFirebase() {
     try {
         console.log("Initializing Firebase connection...");
         updateStatus('connected', 'Firebase connection initialized');
+        
+        // Get initial data snapshot
+        const initialData = await fetchFirebaseData(true);
+        if (initialData) {
+            previousData = initialData;
+            console.log("Initial data snapshot stored", Object.keys(initialData).length, "entries");
+            updateStatus('connected', `Initial data loaded: ${Object.keys(initialData).length} entries`);
+        }
+        
         return true;
     } catch (error) {
         console.error("Error initializing Firebase:", error);
@@ -25,10 +35,13 @@ async function initFirebase() {
 
 /**
  * Fetch data from the Firebase database via the PHP API
+ * @param {boolean} isInitialLoad - Whether this is the initial data load
  * @returns {Promise<Object>} The data from Firebase
  */
-async function fetchFirebaseData() {
-    updateStatus('polling', 'Polling Firebase database...');
+async function fetchFirebaseData(isInitialLoad = false) {
+    if (!isInitialLoad) {
+        updateStatus('polling', 'Polling Firebase database...');
+    }
     try {
         // Use the remote API endpoint
         const response = await fetch('https://jeyder.com.ar/tolch/ecos/api.php');
@@ -58,32 +71,38 @@ async function fetchFirebaseData() {
 }
 
 /**
- * Find the newest entry in the Firebase data
- * @param {Object} data - The Firebase data
+ * Find the newest entry in the Firebase data that wasn't in the previous data
+ * @param {Object} currentData - The current Firebase data
  * @returns {Object|null} The newest entry or null if none found
  */
-function findNewestEntry(data) {
-    // Log the data structure to understand its format
-    console.log('Finding newest entry in data:', data);
+function findNewestEntry(currentData) {
+    console.log('Finding newest entry in data...');
     
-    if (!data || Object.keys(data).length === 0) {
+    if (!currentData || Object.keys(currentData).length === 0) {
         console.log('No data or empty data object');
+        return null;
+    }
+
+    // If we don't have previous data yet, store this as previous and return null
+    if (!previousData) {
+        console.log('No previous data to compare with, storing current data as baseline');
+        previousData = currentData;
         return null;
     }
 
     let newestEntry = null;
     let newestTimestamp = null;
+    let newEntries = [];
 
-    // Loop through all entries to find the newest one
-    for (const id in data) {
-        const entry = data[id];
-        console.log(`Processing entry with ID: ${id}`, entry);
-        
-        // Skip if this is the last processed ID
-        if (id === lastProcessedId) {
-            console.log(`Skipping already processed entry: ${id}`);
+    // Find entries that are in currentData but not in previousData
+    for (const id in currentData) {
+        // Skip if this entry was in the previous data
+        if (previousData[id]) {
             continue;
         }
+
+        const entry = currentData[id];
+        console.log(`Found new entry with ID: ${id}`);
         
         // Check if entry has a timestamp field (could be named differently)
         let timestamp = null;
@@ -96,9 +115,9 @@ function findNewestEntry(data) {
         }
         
         if (timestamp) {
-            console.log(`Found timestamp: ${timestamp}`);
             try {
                 const entryDate = parseTimestamp(timestamp);
+                newEntries.push({ id, entry, date: entryDate });
                 
                 // Check if this entry is newer than our current newest
                 if (!newestTimestamp || entryDate > newestTimestamp) {
@@ -112,6 +131,14 @@ function findNewestEntry(data) {
         } else {
             console.log(`No timestamp found for entry ${id}`);
         }
+    }
+    
+    // Update previousData with the current data for next comparison
+    previousData = { ...currentData };
+    
+    console.log(`Found ${newEntries.length} new entries`);
+    if (newEntries.length > 0) {
+        console.log('New entries:', newEntries);
     }
 
     return newestEntry;
@@ -274,9 +301,12 @@ function startListening() {
     pollingInterval = setInterval(async () => {
         const data = await fetchFirebaseData();
         if (data) {
+            // Find newest entry that wasn't in the previous data
             const newestEntry = findNewestEntry(data);
             if (newestEntry) {
+                // Process only the newest entry
                 processNewEntry(newestEntry);
+                updateStatus('connected', `Processed new entry: ${newestEntry.id.substring(0, 8)}...`);
             } else {
                 updateStatus('connected', 'No new entries found');
             }
