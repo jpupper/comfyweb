@@ -40,6 +40,8 @@ ws.onmessage = (event) => {
                 if (statusText) {
                     statusText.textContent = 'Conectando...';
                 }
+                // Marcar que estamos en proceso de conexión
+                window.comfyConnecting = true;
                 break;
             case 'connected':
                 Logger.info(`✓ ${message.message}`);
@@ -49,8 +51,9 @@ ws.onmessage = (event) => {
                 if (statusText) {
                     statusText.textContent = 'Conectado';
                 }
-                // Activar flag de conexión y cargar modelos
+                // Activar flag de conexión y limpiar flag de connecting
                 window.comfyConnected = true;
+                window.comfyConnecting = false;
                 
                 // Resetear y recargar modelos (forzar recarga porque puede ser otra URL)
                 if (typeof resetModels === 'function') {
@@ -73,17 +76,30 @@ ws.onmessage = (event) => {
                 }
                 break;
             case 'disconnected':
-                Logger.warning(`⚠️ ${message.message}`);
-                if (statusIndicator) {
-                    statusIndicator.className = 'status-indicator status-disconnected';
-                }
-                if (statusText) {
-                    statusText.textContent = 'Desconectado';
+                // Solo mostrar desconectado si no estamos reconectando
+                if (!window.comfyConnecting) {
+                    Logger.warning(`⚠️ ${message.message}`);
+                    if (statusIndicator) {
+                        statusIndicator.className = 'status-indicator status-disconnected';
+                    }
+                    if (statusText) {
+                        statusText.textContent = 'Desconectado';
+                    }
+                } else {
+                    Logger.info(`🔄 Reconectando a nuevo servidor...`);
                 }
                 // Marcar como desconectado
                 window.comfyConnected = false;
                 break;
         }
+        return;
+    }
+    
+    // Manejar mensajes de progreso detallado
+    if (message.type === 'generation_progress') {
+        const progressPercent = 40 + (message.percent * 0.4); // 40% a 80%
+        updateProgress(`${message.message}`, Math.round(progressPercent));
+        Logger.info(`📊 ${message.message} (${message.percent}%)`);
         return;
     }
     
@@ -96,7 +112,13 @@ ws.onmessage = (event) => {
                 updateProgress('📋 Prompt en cola...', 20);
                 break;
             case 'processing':
-                updateProgress('⚙️ Generando imagen...', 50);
+                updateProgress('⚙️ Generando imagen...', 40);
+                break;
+            case 'executing':
+                updateProgress('🎨 ComfyUI procesando...', 45);
+                break;
+            case 'downloading':
+                updateProgress('📥 Descargando imagen...', 85);
                 break;
             case 'error':
                 Logger.error(message.message);

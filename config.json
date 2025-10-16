@@ -1,4 +1,4 @@
 {
-  "comfyUrl": "http://localhost:8188",
-  "isRemote": false
+  "comfyUrl": "https://investing-paintings-reached-trim.trycloudflare.com/",
+  "isRemote": true
 }

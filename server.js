@@ -128,6 +128,35 @@ function setupComfyWebSocketHandlers() {
 
         const message = JSON.parse(messageString);
 
+        // Manejar progreso de ejecución
+        if (message.type === 'progress') {
+            const value = message.data.value;
+            const max = message.data.max;
+            const percent = Math.round((value / max) * 100);
+            
+            console.log(`Progress: ${value}/${max} (${percent}%)`);
+            
+            broadcastToClients({
+                type: 'generation_progress',
+                value: value,
+                max: max,
+                percent: percent,
+                message: `⚙️ Generando: Step ${value}/${max}`
+            });
+        }
+        
+        // Manejar ejecución iniciada
+        if (message.type === 'executing') {
+            if (message.data.node) {
+                console.log(`Executing node: ${message.data.node}`);
+                broadcastToClients({
+                    type: 'generation_status',
+                    status: 'executing',
+                    message: '🎨 ComfyUI procesando...'
+                });
+            }
+        }
+
         if (message.type === 'executed') {
             const details = promptDetails[message.data.prompt_id];
             console.log(`Execution completed for prompt ID: ${message.data.prompt_id}`);
@@ -140,6 +169,14 @@ function setupComfyWebSocketHandlers() {
                 const parsedUrl = parseComfyUrl(config.comfyUrl);
                 const imageUrl = `${parsedUrl.baseUrl}/view?filename=${encodeURIComponent(image.filename)}&subfolder=${encodeURIComponent(subfolder)}&type=${encodeURIComponent(image.type)}`;
                 console.log('Downloading image from:', imageUrl);
+                
+                // Notificar que está descargando
+                broadcastToClients({
+                    type: 'generation_status',
+                    status: 'downloading',
+                    message: '📥 Descargando imagen desde ComfyUI...'
+                });
+                
                 const filename = path.join(__dirname, 'public', 'imagenes', subfolder, image.filename);
                 await downloadImage(imageUrl, filename, subfolder);
                 console.log(`Downloaded image: ${filename}`);
@@ -478,8 +515,8 @@ async function generarImagen(promptText, params = {}) {
     
     // Parámetros por defecto
     const steps = params.steps || 6;
-    const width = params.width || 1080;
-    const height = params.height || 1080;
+    const width = params.width || 512;
+    const height = params.height || 512;
     const seed = params.seed || Math.floor(Math.random() * 18446744073709551614) + 1;
     const model = params.model || 'realvisxl.safetensors';
     
