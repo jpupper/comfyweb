@@ -185,8 +185,8 @@ function setupComfyWebSocketHandlers() {
                 wss.clients.forEach(client => {
                     if (client.readyState === WebSocket.OPEN) {
                         const imagePath = subfolder ? `/imagenes/${subfolder}/${image.filename}` : `/imagenes/${image.filename}`;
-                        // Usar URL absoluta si está configurada (producción), sino usar ruta relativa (desarrollo)
-                        const imageUrl = PUBLIC_URL ? `${PUBLIC_URL}${imagePath}` : `${BASE_PATH}${imagePath}`;
+                        // HARDCODED: Siempre usar la URL absoluta del VPS
+                        const imageUrl = `https://vps-4455523-x.dattaweb.com/comfyweb${imagePath}`;
                         console.log(`📤 Sending image URL to client: ${imageUrl}`);
                         client.send(JSON.stringify({
                             type: 'image_generated',
