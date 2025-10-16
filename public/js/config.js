@@ -2,7 +2,7 @@
 async function loadConfig() {
     try {
         Logger.info('Cargando configuración...');
-        const response = await fetch('/api/config');
+        const response = await fetch(apiUrl('/api/config'));
         const config = await response.json();
         
         document.getElementById('comfyUrl').value = config.comfyUrl;
@@ -47,15 +47,17 @@ async function saveConfig() {
         
         Logger.info(`Tipo de conexión: ${isRemote ? 'Remota' : 'Local'}`);
         
-        const response = await fetch('/api/config', {
+        const config = {
+            comfyUrl: comfyUrl,
+            isRemote: isRemote
+        };
+        
+        const response = await fetch(apiUrl('/api/config'), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({
-                comfyUrl: comfyUrl,
-                isRemote: isRemote
-            })
+            body: JSON.stringify(config)
         });
         
         const result = await response.json();

@@ -1,0 +1,122 @@
+=== COMANDOS PARA VPS - ComfyWeb ===
+
+📦 1. SUBIR ARCHIVOS AL VPS
+============================
+# Desde Windows (PowerShell o CMD):
+cd c:\xampp\htdocs
+tar -czf comfyweb.tar.gz comfyweb/
+scp comfyweb.tar.gz root@vps-4455523-x.dattaweb.com:/root/
+
+
+🚀 2. INSTALAR EN VPS
+=====================
+# Conectar al VPS:
+ssh root@vps-4455523-x.dattaweb.com
+
+# Descomprimir:
+cd /root
+tar -xzf comfyweb.tar.gz
+cd comfyweb
+
+# Instalar dependencias:
+npm install
+
+# Crear directorio de imágenes:
+mkdir -p public/imagenes
+chmod -R 755 public/imagenes
+
+
+🔧 3. INICIAR CON PM2
+=====================
+# Iniciar la aplicación:
+pm2 start /root/comfyweb/server.js --name comfyweb
+
+# Guardar configuración:
+pm2 save
+
+# Configurar inicio automático:
+pm2 startup
+
+
+🌐 4. CONFIGURAR NGINX
+======================
+# Editar configuración:
+nano /etc/nginx/sites-available/default
+
+# Agregar este bloque DENTRO del server { ... }:
+
+    # APLICACIÓN: ComfyWeb (puerto 8085)
+    location /comfyweb {
+        proxy_pass http://localhost:8085;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # Timeouts más largos para WebSocket
+        proxy_read_timeout 300;
+        proxy_connect_timeout 300;
+        proxy_send_timeout 300;
+    }
+
+# Verificar y recargar:
+nginx -t
+systemctl reload nginx
+
+
+✅ 5. VERIFICAR
+===============
+# Ver estado:
+pm2 status
+
+# Ver logs:
+pm2 logs comfyweb
+
+# Acceder desde navegador:
+https://vps-4455523-x.dattaweb.com/comfyweb
+
+
+🔄 6. ACTUALIZAR LA APP
+=======================
+# Desde Windows:
+cd c:\xampp\htdocs
+tar -czf comfyweb.tar.gz comfyweb/
+scp comfyweb.tar.gz root@vps-4455523-x.dattaweb.com:/root/
+
+# En VPS:
+cd /root
+tar -xzf comfyweb.tar.gz
+pm2 restart comfyweb
+
+
+📊 7. GESTIÓN CON PM2
+=====================
+pm2 status                  # Ver estado
+pm2 logs comfyweb           # Ver logs en tiempo real
+pm2 logs comfyweb --lines 50  # Ver últimas 50 líneas
+pm2 restart comfyweb        # Reiniciar
+pm2 stop comfyweb           # Detener
+pm2 delete comfyweb         # Eliminar
+pm2 monit                   # Monitor interactivo
+
+
+🐛 8. TROUBLESHOOTING
+=====================
+# Si el puerto está ocupado:
+netstat -tulpn | grep 8085
+pm2 delete comfyweb
+pm2 start /root/comfyweb/server.js --name comfyweb
+
+# Ver logs de Nginx:
+tail -f /var/log/nginx/error.log
+
+# Ver logs de PM2:
+pm2 logs comfyweb --err
+
+# Reiniciar todo:
+pm2 restart comfyweb
+systemctl reload nginx

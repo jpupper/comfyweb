@@ -75,6 +75,7 @@ function connectToComfyUI() {
     
     wsComfy.on('open', () => {
         console.log('✓ WebSocket connection established with ComfyUI');
+        console.log(`✓ WebSocket ready state: ${wsComfy.readyState}`);
         broadcastToClients({ 
             type: 'connection_status', 
             status: 'connected', 
@@ -183,9 +184,13 @@ function setupComfyWebSocketHandlers() {
 
                 wss.clients.forEach(client => {
                     if (client.readyState === WebSocket.OPEN) {
+                        const imagePath = subfolder ? `/imagenes/${subfolder}/${image.filename}` : `/imagenes/${image.filename}`;
+                        // Usar URL absoluta si está configurada (producción), sino usar ruta relativa (desarrollo)
+                        const imageUrl = PUBLIC_URL ? `${PUBLIC_URL}${imagePath}` : `${BASE_PATH}${imagePath}`;
+                        console.log(`📤 Sending image URL to client: ${imageUrl}`);
                         client.send(JSON.stringify({
                             type: 'image_generated',
-                            url: `/imagenes/${subfolder}/${image.filename}`,
+                            url: imageUrl,
                             prompt: details.prompt
                         }));
                     }
@@ -197,13 +202,19 @@ function setupComfyWebSocketHandlers() {
 
 const app = express();
 
-app.use(express.static(path.join(__dirname, 'public')));
+// Configurar subpath para producción (cuando se accede desde /comfyweb)
+const BASE_PATH = process.env.BASE_PATH || '';
+const PUBLIC_URL = process.env.PUBLIC_URL || '';
+
+app.use(BASE_PATH, express.static(path.join(__dirname, 'public')));
 app.use(bodyParser.json());
 
 const port = 8085;
 const server = http.createServer(app);
 server.listen(port, () => {
     console.log(`Server is running on http://localhost:${port}`);
+    console.log(`BASE_PATH: ${BASE_PATH}`);
+    console.log(`PUBLIC_URL: ${PUBLIC_URL || '(not set - using relative paths)'}`);
 });
 
 const io = require('socket.io')(server);
@@ -248,6 +259,7 @@ wss.on('connection', async (ws, req) => {
                 promptDetails[promptId] = { prompt: message.prompt, ws: ws }; // Guarda prompt y websocket
                 
                 console.log(`✓ Prompt queued with ID: ${promptId}`);
+                console.log(`🔍 WebSocket ComfyUI state: ${wsComfy ? wsComfy.readyState : 'null'} (1=OPEN, 0=CONNECTING, 2=CLOSING, 3=CLOSED)`);
                 ws.send(JSON.stringify({
                     type: 'generation_status',
                     status: 'processing',
@@ -281,12 +293,12 @@ io.on('connection', function(socket) {
 });
 
 // API endpoints para configuración
-app.get('/api/config', (req, res) => {
+app.get(BASE_PATH + '/api/config', (req, res) => {
     res.json(config);
 });
 
 // Endpoint para obtener modelos disponibles
-app.get('/api/models', async (req, res) => {
+app.get(BASE_PATH + '/api/models', async (req, res) => {
     try {
         const parsedUrl = parseComfyUrl(config.comfyUrl);
         const httpModule = getHttpModule(config.comfyUrl);
@@ -329,7 +341,7 @@ app.get('/api/models', async (req, res) => {
     }
 });
 
-app.post('/api/config', (req, res) => {
+app.post(BASE_PATH + '/api/config', (req, res) => {
     const newConfig = req.body;
     if (!newConfig.comfyUrl) {
         return res.status(400).json({ error: 'comfyUrl is required' });

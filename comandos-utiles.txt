@@ -1,0 +1,91 @@
+=== COMANDOS ÚTILES - ComfyTD VPS ===
+
+📦 SUBIR AL VPS (desde Windows)
+================================
+cd c:\xampp\htdocs\comfytd
+tar -czf comfytd.tar.gz comfytd/
+scp comfytd.tar.gz root@vps-4455523-x.dattaweb.com:/root/
+
+
+🚀 INSTALACIÓN INICIAL (en VPS)
+================================
+ssh root@vps-4455523-x.dattaweb.com
+cd /root
+tar -xzf comfytd.tar.gz
+cd comfytd
+chmod +x install-vps.sh
+bash install-vps.sh
+
+
+🔧 PM2 - GESTIÓN DE LA APP
+===========================
+pm2 status                      # Ver estado de todas las apps
+pm2 logs comfytd                # Ver logs en tiempo real
+pm2 logs comfytd --lines 100    # Ver últimas 100 líneas
+pm2 restart comfytd             # Reiniciar la app
+pm2 stop comfytd                # Detener la app
+pm2 start comfytd               # Iniciar la app
+pm2 delete comfytd              # Eliminar de PM2
+pm2 save                        # Guardar configuración actual
+
+
+🌐 NGINX
+========
+nginx -t                        # Verificar configuración
+systemctl reload nginx          # Recargar configuración
+systemctl restart nginx         # Reiniciar Nginx
+tail -f /var/log/nginx/error.log    # Ver logs de errores
+tail -f /var/log/nginx/access.log   # Ver logs de acceso
+
+
+🔄 ACTUALIZAR LA APP
+====================
+# Desde Windows:
+scp -r comfytd/* root@vps-4455523-x.dattaweb.com:/root/comfytd/
+
+# En VPS:
+pm2 restart comfytd
+
+
+🐛 DEBUGGING
+============
+# Ver si el puerto está ocupado
+netstat -tulpn | grep 8085
+
+# Ver procesos de Node
+ps aux | grep node
+
+# Matar proceso en puerto 8085
+lsof -ti:8085 | xargs kill -9
+
+# Ver uso de memoria
+pm2 monit
+
+# Limpiar logs de PM2
+pm2 flush
+
+
+📁 ARCHIVOS IMPORTANTES
+=======================
+/root/comfytd/                  # Directorio principal
+/root/comfytd/config.json       # Configuración de ComfyUI
+/root/comfytd/public/imagenes/  # Imágenes generadas
+/etc/nginx/sites-available/default  # Config de Nginx
+
+
+🔐 PERMISOS
+===========
+chmod -R 755 /root/comfytd/public/imagenes
+chown -R root:root /root/comfytd
+
+
+🌐 URL DE ACCESO
+================
+https://vps-4455523-x.dattaweb.com/comfytd
+
+
+📊 MONITOREO
+============
+pm2 monit                       # Monitor interactivo
+pm2 list                        # Lista de apps
+pm2 info comfytd                # Info detallada de la app

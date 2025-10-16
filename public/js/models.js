@@ -21,7 +21,7 @@ async function loadAvailableModels(forceReload = false) {
     
     try {
         Logger.info('🔍 Cargando modelos disponibles de ComfyUI...');
-        const response = await fetch('/api/models');
+        const response = await fetch(apiUrl('/api/models'));
         const data = await response.json();
         
         if (data.success && data.models && data.models.length > 0) {

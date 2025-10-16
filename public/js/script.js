@@ -1,11 +1,14 @@
-var host = '192.168.0.13:8080'; //ESTE ES EL QUE VA A TOUCHDESIGNER
-socket = new WebSocket('ws://' + host);
+// TouchDesigner WebSocket - Solo funciona en desarrollo local
+// var host = '192.168.0.13:8080';
+// socket = new WebSocket('ws://' + host);
 
 const imageContainer = document.getElementById('imageContainer');
 
 // Conectar al servidor local (Node.js)
-Logger.info(`Conectando al servidor local: ws://${window.location.hostname}:${window.location.port}`);
-const ws = new WebSocket(`ws://${window.location.hostname}:${window.location.port}`);
+Logger.info(`Conectar al WebSocket del servidor Node.js`);
+const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+const wsPath = BASE_PATH ? BASE_PATH + '/' : '';
+const ws = new WebSocket(`${wsProtocol}//${window.location.host}${wsPath}`);
 
 ws.onopen = () => {
     Logger.info('✓ WebSocket conectado al servidor local');
@@ -136,13 +139,12 @@ ws.onmessage = (event) => {
 		Logger.info(`✓ Imagen generada: ${message.url}`);
 		updateProgress('🎨 Descargando imagen...', 80);
 		
-		
-		 // Sending message back to the server
-		socket.send(JSON.stringify({
-			type: 'terminoImagen',
-			prompt: message.prompt,
-			url: message.url
-		}));
+		// TouchDesigner - Solo en desarrollo local
+		// socket.send(JSON.stringify({
+		// 	type: 'terminoImagen',
+		// 	prompt: message.prompt,
+		// 	url: message.url
+		// }));
 		//ComfyUI_temp_pbbek_00072_.png
         console.log('Imagen generada:', message.url);
         console.log('Prompt:', message.prompt);
