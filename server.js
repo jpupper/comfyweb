@@ -196,6 +196,7 @@ wss.on('connection', async (ws, req) => {
         const message = JSON.parse(data);
         if (message.type === 'generarImagen') {
             console.log(`📥 Prompt received: ${message.prompt}`);
+            console.log(`📊 Parámetros:`, message.params);
             
             // Notificar al cliente que se está procesando
             ws.send(JSON.stringify({
@@ -205,7 +206,8 @@ wss.on('connection', async (ws, req) => {
             }));
             
             try {
-                const promptId = await generarImagen(message.prompt);
+                const params = message.params || {};
+                const promptId = await generarImagen(message.prompt, params);
                 promptDetails[promptId] = { prompt: message.prompt, ws: ws }; // Guarda prompt y websocket
                 
                 console.log(`✓ Prompt queued with ID: ${promptId}`);
@@ -244,6 +246,50 @@ io.on('connection', function(socket) {
 // API endpoints para configuración
 app.get('/api/config', (req, res) => {
     res.json(config);
+});
+
+// Endpoint para obtener modelos disponibles
+app.get('/api/models', async (req, res) => {
+    try {
+        const parsedUrl = parseComfyUrl(config.comfyUrl);
+        const httpModule = getHttpModule(config.comfyUrl);
+        
+        const options = {
+            hostname: parsedUrl.hostname,
+            port: parsedUrl.port,
+            path: '/object_info',
+            method: 'GET'
+        };
+        
+        const request = httpModule.request(options, (response) => {
+            let data = '';
+            response.on('data', (chunk) => {
+                data += chunk;
+            });
+            response.on('end', () => {
+                try {
+                    const objectInfo = JSON.parse(data);
+                    const checkpointLoader = objectInfo.CheckpointLoaderSimple;
+                    if (checkpointLoader && checkpointLoader.input && checkpointLoader.input.required) {
+                        const models = checkpointLoader.input.required.ckpt_name[0];
+                        res.json({ success: true, models });
+                    } else {
+                        res.json({ success: false, error: 'No se pudo obtener la lista de modelos' });
+                    }
+                } catch (e) {
+                    res.json({ success: false, error: 'Error al parsear respuesta: ' + e.message });
+                }
+            });
+        });
+        
+        request.on('error', (error) => {
+            res.json({ success: false, error: error.message });
+        });
+        
+        request.end();
+    } catch (error) {
+        res.json({ success: false, error: error.message });
+    }
 });
 
 app.post('/api/config', (req, res) => {
@@ -378,23 +424,107 @@ async function generarImagen_old(promptText) {
     promptWorkflow["9"]["inputs"]["filename_prefix"] = "ComfyUI";
 
     const promptId = await queuePrompt(promptWorkflow);
-
-    console.log(`Queued prompt with ID: ${promptId}`);
-    return promptId;
 }
 
-async function generarImagen(promptText) {
-    const promptWorkflow = await readWorkflowAPI();
-	console.log("PROMPT WORKFLOW" + promptWorkflow)
-    promptWorkflow["6"]["inputs"]["text"] = promptText;
-    promptWorkflow["3"]["inputs"]["seed"] = Math.floor(Math.random() * 18446744073709551614) + 1;
-    const emptyLatentImgNode = promptWorkflow["5"];
-    emptyLatentImgNode["inputs"]["batch_size"] = 1;
+// Función para validar si un modelo existe
+async function validateModel(modelName) {
+    try {
+        const parsedUrl = parseComfyUrl(config.comfyUrl);
+        const httpModule = getHttpModule(config.comfyUrl);
+        
+        return new Promise((resolve) => {
+            const options = {
+                hostname: parsedUrl.hostname,
+                port: parsedUrl.port,
+                path: '/object_info',
+                method: 'GET'
+            };
+            
+            const request = httpModule.request(options, (response) => {
+                let data = '';
+                response.on('data', (chunk) => {
+                    data += chunk;
+                });
+                response.on('end', () => {
+                    try {
+                        const objectInfo = JSON.parse(data);
+                        const checkpointLoader = objectInfo.CheckpointLoaderSimple;
+                        if (checkpointLoader && checkpointLoader.input && checkpointLoader.input.required) {
+                            const models = checkpointLoader.input.required.ckpt_name[0];
+                            const exists = models.includes(modelName);
+                            resolve({ exists, availableModels: models });
+                        } else {
+                            resolve({ exists: false, availableModels: [] });
+                        }
+                    } catch (e) {
+                        resolve({ exists: false, availableModels: [] });
+                    }
+                });
+            });
+            
+            request.on('error', () => {
+                resolve({ exists: false, availableModels: [] });
+            });
+            
+            request.end();
+        });
+    } catch (error) {
+        return { exists: false, availableModels: [] };
+    }
+}
 
+async function generarImagen(promptText, params = {}) {
+    const promptWorkflow = await readWorkflowAPI();
+    
+    // Parámetros por defecto
+    const steps = params.steps || 6;
+    const width = params.width || 1080;
+    const height = params.height || 1080;
+    const seed = params.seed || Math.floor(Math.random() * 18446744073709551614) + 1;
+    const model = params.model || 'realvisxl.safetensors';
+    
+    console.log(`🎨 Generando imagen con parámetros:`, { promptText, steps, width, height, seed, model });
+    
+    // Validar si el modelo existe
+    const modelValidation = await validateModel(model);
+    if (!modelValidation.exists) {
+        console.error(`❌ Modelo "${model}" no encontrado en ComfyUI`);
+        console.log(`📋 Modelos disponibles:`, modelValidation.availableModels.slice(0, 5).join(', '));
+        
+        // Notificar al cliente
+        broadcastToClients({
+            type: 'generation_status',
+            status: 'error',
+            message: `❌ Modelo "${model}" no encontrado. Usando modelo por defecto.`
+        });
+        
+        // Usar el primer modelo disponible como fallback
+        if (modelValidation.availableModels.length > 0) {
+            promptWorkflow["4"]["inputs"]["ckpt_name"] = modelValidation.availableModels[0];
+            console.log(`✓ Usando modelo fallback: ${modelValidation.availableModels[0]}`);
+        }
+    } else {
+        console.log(`✓ Modelo "${model}" encontrado`);
+        promptWorkflow["4"]["inputs"]["ckpt_name"] = model;
+        
+        broadcastToClients({
+            type: 'generation_status',
+            status: 'info',
+            message: `✓ Usando modelo: ${model}`
+        });
+    }
+    
+    // Configurar parámetros del workflow
+    promptWorkflow["6"]["inputs"]["text"] = promptText;
+    promptWorkflow["3"]["inputs"]["seed"] = seed;
+    promptWorkflow["3"]["inputs"]["steps"] = steps;
+    promptWorkflow["5"]["inputs"]["width"] = width;
+    promptWorkflow["5"]["inputs"]["height"] = height;
+    promptWorkflow["5"]["inputs"]["batch_size"] = 1;
     promptWorkflow["9"]["inputs"]["filename_prefix"] = "ComfyUI";
 
     const promptId = await queuePrompt(promptWorkflow);
 
-    console.log(`Queued prompt with ID: ${promptId}`);
+    console.log(`✓ Prompt en cola con ID: ${promptId}`);
     return promptId;
 }

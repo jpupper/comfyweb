@@ -85,10 +85,12 @@ function setLocalhost() {
 
 // Preset para Colab (el usuario debe pegar su URL de Cloudflare)
 function setColab() {
-    const url = prompt('Ingrese la URL de Cloudflare Tunnel de su Colab\n(ejemplo: https://concentrations-roger-valuable-alfred.trycloudflare.com)');
-    if (url) {
-        document.getElementById('comfyUrl').value = url.trim();
-    }
+    const urlInput = document.getElementById('comfyUrl');
+    urlInput.value = 'https://investing-paintings-reached-trim.trycloudflare.com/';
+    urlInput.placeholder = 'URL de Cloudflare Tunnel';
+    urlInput.focus();
+    // Seleccionar todo el texto para que sea fácil reemplazarlo
+    urlInput.select();
 }
 
 // Actualizar indicador de estado

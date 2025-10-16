@@ -61,33 +61,13 @@
         
         .content {
             padding: 30px;
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 30px;
-        }
-        
-        .left-panel {
-            display: flex;
-            flex-direction: column;
-            gap: 25px;
-        }
-        
-        .right-panel {
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-        }
-        
-        @media (max-width: 1024px) {
-            .content {
-                grid-template-columns: 1fr;
-            }
         }
         
         .config-section {
             background: #f8f9fa;
             padding: 20px;
             border-radius: 8px;
+            margin-bottom: 25px;
         }
         
         .config-section h3 {
@@ -151,6 +131,7 @@
             padding: 25px;
             border-radius: 8px;
             border: 1px solid #e0e0e0;
+            margin-bottom: 25px;
         }
         
         .generation-section h3 {
@@ -380,91 +361,85 @@
         </div>
         
         <div class="content">
-            <!-- Panel Izquierdo: Controles -->
-            <div class="left-panel">
-                <!-- Configuración de ComfyUI -->
-                <div class="config-section">
-                    <h3>⚙️ Configuración de ComfyUI</h3>
-                    <div class="preset-buttons">
-                        <button class="preset-button" onclick="setLocalhost()">Localhost</button>
-                        <button class="preset-button" onclick="setColab()">Colab (Cloudflare)</button>
-                    </div>
-                    <div class="config-row">
-                        <input type="text" id="comfyUrl" class="config-input" placeholder="URL de ComfyUI (ej: http://localhost:8188 o https://xxx.trycloudflare.com)">
-                        <button class="config-button" onclick="saveConfig()">Guardar y Conectar</button>
-                    </div>
-                    <small id="currentUrl"></small>
+            <!-- Configuración de ComfyUI -->
+            <div class="config-section">
+                <h3>⚙️ Configuración de ComfyUI</h3>
+                <div class="preset-buttons">
+                    <button class="preset-button" onclick="setLocalhost()">Localhost</button>
+                    <button class="preset-button" onclick="setColab()">Colab (Cloudflare)</button>
+                </div>
+                <div class="config-row">
+                    <input type="text" id="comfyUrl" class="config-input" placeholder="URL de ComfyUI (ej: http://localhost:8188 o https://xxx.trycloudflare.com)">
+                    <button class="config-button" onclick="saveConfig()">Guardar y Conectar</button>
+                </div>
+                <small id="currentUrl"></small>
+            </div>
+            
+            <!-- Generación de Imágenes -->
+            <div class="generation-section">
+                <h3>✨ Generar Imagen</h3>
+                
+                <div class="form-group">
+                    <label for="prompt">Prompt:</label>
+                    <textarea id="prompt" placeholder="Describe la imagen que quieres generar..."></textarea>
                 </div>
                 
-                <!-- Generación de Imágenes -->
-                <div class="generation-section">
-                    <h3>✨ Generar Imagen</h3>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="modelSelect">Modelo:</label>
+                        <select id="modelSelect">
+                            <option value="realvisxl.safetensors">realvisxl.safetensors</option>
+                        </select>
+                    </div>
                     
                     <div class="form-group">
-                        <label for="prompt">Prompt:</label>
-                        <textarea id="prompt" placeholder="Describe la imagen que quieres generar..."></textarea>
+                        <label for="steps">Steps:</label>
+                        <input type="number" id="steps" value="6" min="1" max="150">
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="width">Ancho:</label>
+                        <input type="number" id="width" value="1080" min="64" max="2048" step="8">
                     </div>
                     
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="modelSelect">Modelo:</label>
-                            <select id="modelSelect">
-                                <option value="realvisxl.safetensors">realvisxl.safetensors</option>
-                            </select>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="steps">Steps:</label>
-                            <input type="number" id="steps" value="6" min="1" max="150">
-                        </div>
+                    <div class="form-group">
+                        <label for="height">Alto:</label>
+                        <input type="number" id="height" value="1080" min="64" max="2048" step="8">
                     </div>
-                    
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="width">Ancho:</label>
-                            <input type="number" id="width" value="1080" min="64" max="2048" step="8">
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="height">Alto:</label>
-                            <input type="number" id="height" value="1080" min="64" max="2048" step="8">
-                        </div>
+                </div>
+                
+                <div class="seed-group">
+                    <div class="form-group">
+                        <label for="seed">Semilla:</label>
+                        <input type="number" id="seed" value="-1" min="-1">
                     </div>
-                    
-                    <div class="seed-group">
-                        <div class="form-group">
-                            <label for="seed">Semilla:</label>
-                            <input type="number" id="seed" value="-1" min="-1">
-                        </div>
-                        <button class="random-button" onclick="randomizeSeed()">🎲 Aleatorio</button>
-                    </div>
-                    
-                    <button class="generate-button" id="generateButton">🚀 Generar Imagen</button>
+                    <button class="random-button" onclick="randomizeSeed()">🎲 Aleatorio</button>
+                </div>
+                
+                <button class="generate-button" id="generateButton">🚀 Generar Imagen</button>
+            </div>
+            
+            <!-- Barra de progreso -->
+            <div id="progressSection" class="progress-section" style="display: none;">
+                <div class="progress-header">
+                    <span id="progressText" class="progress-text">Generando...</span>
+                    <span id="progressPercent" class="progress-percent">0%</span>
+                </div>
+                <div class="progress-bar-container">
+                    <div id="progressBar" class="progress-bar"></div>
                 </div>
             </div>
             
-            <!-- Panel Derecho: Imagen y Logs -->
-            <div class="right-panel">
-                <!-- Barra de progreso -->
-                <div id="progressSection" class="progress-section" style="display: none;">
-                    <div class="progress-header">
-                        <span id="progressText" class="progress-text">Generando...</span>
-                        <span id="progressPercent" class="progress-percent">0%</span>
-                    </div>
-                    <div class="progress-bar-container">
-                        <div id="progressBar" class="progress-bar"></div>
-                    </div>
-                </div>
-                
-                <!-- Imagen generada -->
-                <div id="imageContainer"></div>
-                
-                <!-- Logs -->
-                <div class="log-section">
-                    <h4>📋 Node.js Console</h4>
-                    <div id="logContainer">
-                        <div class="log-entry log-info">Sistema iniciado...</div>
-                    </div>
+            <!-- Imagen generada -->
+            <div id="imageContainer"></div>
+            
+            <!-- Logs -->
+            <div class="log-section">
+                <h4>📋 Node.js Console</h4>
+                <div id="logContainer">
+                    <div class="log-entry log-info">Sistema iniciado...</div>
                 </div>
             </div>
         </div>

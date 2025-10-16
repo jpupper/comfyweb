@@ -29,6 +29,7 @@ ws.onmessage = (event) => {
     // Manejar mensajes de estado de conexión
     if (message.type === 'connection_status') {
         const statusIndicator = document.getElementById('statusIndicator');
+        const statusText = document.getElementById('statusText');
         
         switch(message.status) {
             case 'connecting':
@@ -36,11 +37,27 @@ ws.onmessage = (event) => {
                 if (statusIndicator) {
                     statusIndicator.className = 'status-indicator status-disconnected';
                 }
+                if (statusText) {
+                    statusText.textContent = 'Conectando...';
+                }
                 break;
             case 'connected':
                 Logger.info(`✓ ${message.message}`);
                 if (statusIndicator) {
                     statusIndicator.className = 'status-indicator status-connected';
+                }
+                if (statusText) {
+                    statusText.textContent = 'Conectado';
+                }
+                // Activar flag de conexión y cargar modelos
+                window.comfyConnected = true;
+                
+                // Resetear y recargar modelos (forzar recarga porque puede ser otra URL)
+                if (typeof resetModels === 'function') {
+                    resetModels();
+                }
+                if (typeof loadAvailableModels === 'function') {
+                    setTimeout(() => loadAvailableModels(true), 500);
                 }
                 break;
             case 'error':
@@ -51,12 +68,20 @@ ws.onmessage = (event) => {
                 if (statusIndicator) {
                     statusIndicator.className = 'status-indicator status-disconnected';
                 }
+                if (statusText) {
+                    statusText.textContent = 'Error';
+                }
                 break;
             case 'disconnected':
                 Logger.warning(`⚠️ ${message.message}`);
                 if (statusIndicator) {
                     statusIndicator.className = 'status-indicator status-disconnected';
                 }
+                if (statusText) {
+                    statusText.textContent = 'Desconectado';
+                }
+                // Marcar como desconectado
+                window.comfyConnected = false;
                 break;
         }
         return;
@@ -154,10 +179,30 @@ document.getElementById('generateButton').addEventListener('click', () => {
         return;
     }
     
-    Logger.info(`📤 Enviando prompt: "${prompt.substring(0, 50)}${prompt.length > 50 ? '...' : ''}"}`);
+    // Obtener todos los parámetros
+    const params = {
+        steps: parseInt(document.getElementById('steps').value) || 6,
+        width: parseInt(document.getElementById('width').value) || 1080,
+        height: parseInt(document.getElementById('height').value) || 1080,
+        seed: parseInt(document.getElementById('seed').value) || -1,
+        model: document.getElementById('modelSelect').value || 'realvisxl.safetensors'
+    };
+    
+    // Si seed es -1, generar uno aleatorio
+    if (params.seed === -1) {
+        params.seed = Math.floor(Math.random() * 18446744073709551614) + 1;
+        document.getElementById('seed').value = params.seed;
+    }
+    
+    Logger.info(`📤 Enviando prompt: "${prompt.substring(0, 50)}${prompt.length > 50 ? '...' : ''}"`);
+    Logger.info(`📊 Parámetros: Steps=${params.steps}, Size=${params.width}x${params.height}, Seed=${params.seed}, Model=${params.model}`);
     showProgress('📤 Enviando prompt a ComfyUI...', 10);
     
-    ws.send(JSON.stringify({ type: 'generarImagen', prompt }));
+    ws.send(JSON.stringify({ 
+        type: 'generarImagen', 
+        prompt: prompt,
+        params: params
+    }));
     
     // Simular progreso mientras espera respuesta
     setTimeout(() => {
