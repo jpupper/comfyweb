@@ -16,7 +16,11 @@ require('dotenv').config();
 
 const express = require('express');
 const app = express();
-const http = require('http').createServer(app);
+const http = require('http');
+// El servidor HTTP NO recibe express en el constructor: primero tiene que
+// pasar el normalizador de path y el engine de socket.io, y recien despues
+// express (asi el handshake nunca lo agarra el catch-all de la SPA).
+const servidorHttp = http.createServer();
 const path = require('path');
 const cors = require('cors');
 const mongoose = require('mongoose');
@@ -78,14 +82,15 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
 // --- Compatibilidad de path detras de nginx ------------------------------
-// El bloque nginx de /comfyweb/ usa proxy_pass con barra final, o sea que
-// puede llegar /socket.io (sin prefijo) o /comfyweb/socket.io. socket.io
-// solo acepta UN path, asi que normalizamos aca: express corre primero
-// sobre el evento 'request' y deja la url como la espera el engine.
+// El bloque nginx de /comfyweb/ usa proxy_pass con barra final: le saca el
+// prefijo, asi que el handshake de socket.io llega como /socket.io/... mientras
+// el engine lo espera en /comfyweb/socket.io. Normalizamos y, MUY IMPORTANTE,
+// NO respondemos desde express para esas rutas (return sin next): si el
+// catch-all las agarra, le devuelve el index.html y el handshake muere
+// (polling: HTML en vez de handshake, websocket: 502).
 app.use((req, res, next) => {
-    if (req.url.startsWith(BASE_PATH + '/socket.io')) {
-        req.url = req.url.slice(BASE_PATH.length);
-    }
+    // engine.io ya atendio (o va a atender) estas rutas: express no responde.
+    if (req.url.startsWith(BASE_PATH + '/socket.io')) return;
     next();
 });
 
@@ -127,7 +132,8 @@ app.get('*', (req, res) => {
 });
 
 // ======================= SOCKET.IO ======================================
-const io = new Server(http, {
+// 1) Engine de socket.io (path con prefijo, el que pide el navegador)
+const io = new Server(servidorHttp, {
     path: BASE_PATH + '/socket.io',
     cors: {
         origin: (origin, cb) => {
@@ -256,8 +262,26 @@ nspAgente.on('connection', async (socket) => {
 });
 
 // ======================= ARRANQUE =======================================
+// 3) Normalizador de path, PRIMERO en la cola de listeners.
+//    nginx sirve /comfyweb/ con proxy_pass de barra final: le saca el prefijo
+//    al upstream, asi que el handshake de socket.io llega como /socket.io/...
+//    mientras el engine lo espera en /comfyweb/socket.io. prependListener
+//    DESPUES de crear el Server deja este handler delante del engine y de
+//    express, que es lo unico que garantiza el orden (engine tambien se
+//    engancha al evento 'request').
+['request', 'upgrade'].forEach((evento) => {
+    servidorHttp.prependListener(evento, (req) => {
+        if (req.url && req.url.startsWith('/socket.io')) {
+            req.url = BASE_PATH + req.url;
+        }
+    });
+});
+
+// 4) Express al final: si va antes, su catch-all se come el handshake.
+servidorHttp.on('request', app);
+
 async function startServer() {
-    http.listen(PORT, '0.0.0.0', () => {
+    servidorHttp.listen(PORT, '0.0.0.0', () => {
         console.log('\n===========================================');
         console.log(`✅ comfyweb corriendo en el puerto ${PORT}`);
         console.log(`   Local: http://localhost:${PORT}${BASE_PATH}/`);
@@ -272,7 +296,7 @@ async function startServer() {
     }
 }
 
-process.on('SIGTERM', () => { http.close(); mongoose.connection.close(); process.exit(0); });
-process.on('SIGINT', () => { http.close(); mongoose.connection.close(); process.exit(0); });
+process.on('SIGTERM', () => { servidorHttp.close(); mongoose.connection.close(); process.exit(0); });
+process.on('SIGINT', () => { servidorHttp.close(); mongoose.connection.close(); process.exit(0); });
 
 startServer();
