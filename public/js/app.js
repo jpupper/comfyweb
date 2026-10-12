@@ -342,7 +342,8 @@
   // ============================================================
   function loadSocketFallback() {
     var s = document.createElement('script');
-    s.src = (window.CONFIG.BASE || '') + '/socket.io/socket.io.js';
+    // Mismo origen, asset propio de la app (tambien esta en el FTP).
+    s.src = (window.CONFIG.BASE || '') + '/vendor/socket.io.min.js';
     s.addEventListener('load', function () { connectSocket(); });
     s.addEventListener('error', function () {
       console.warn('[comfyweb] no se pudo cargar el cliente socket.io');
