@@ -1,579 +1,278 @@
-const WebSocket = require('ws');
-const http = require('http');
-const https = require('https');
-const fs = require('fs');
-const path = require('path');
-const FormData = require('form-data');
-const { v4: uuidv4 } = require('uuid');
+// ============================================================
+// comfyweb - UI web remota del videocomfy local (ecosistema FSC)
+// ------------------------------------------------------------
+// La app NO genera nada en el VPS:
+//   navegador (FTP/VPS)  <->  servidor comfyweb (VPS :8085)
+//                                     ^
+//                          puente local (agent) que sale hacia
+//                          afuera y relayea contra el videocomfy
+//                          de la PC: ws://127.0.0.1:5634
+//
+//   PORT      = 8085
+//   BASE_PATH = /comfyweb   -> https://fullscreencode.com/comfyweb/
+//   MongoDB   = comfyweb
+// ============================================================
+require('dotenv').config();
+
 const express = require('express');
-const bodyParser = require('body-parser');
-const socketIO = require('socket.io');
-const { URL } = require('url');
-
-const clientId = uuidv4();
-const configPath = path.join(__dirname, 'config.json');
-
-// Cargar configuración
-function loadConfig() {
-    try {
-        const data = fs.readFileSync(configPath, 'utf8');
-        return JSON.parse(data);
-    } catch (error) {
-        console.error('Error loading config:', error);
-        return { comfyUrl: 'http://localhost:8188', isRemote: false };
-    }
-}
-
-// Guardar configuración
-function saveConfig(config) {
-    try {
-        fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-        return true;
-    } catch (error) {
-        console.error('Error saving config:', error);
-        return false;
-    }
-}
-
-let config = loadConfig();
-let wsComfy = null;
-
-// Función para obtener el protocolo HTTP correcto
-function getHttpModule(url) {
-    return url.startsWith('https') ? https : http;
-}
-
-// Función para parsear URL de ComfyUI
-function parseComfyUrl(comfyUrl) {
-    const url = new URL(comfyUrl);
-    return {
-        protocol: url.protocol.replace(':', ''),
-        hostname: url.hostname,
-        port: url.port || (url.protocol === 'https:' ? '443' : '8188'),
-        baseUrl: comfyUrl.replace(/\/$/, '') // Remove trailing slash
-    };
-}
-
-// Función para conectar a ComfyUI WebSocket
-function connectToComfyUI() {
-    if (wsComfy) {
-        try {
-            wsComfy.close();
-        } catch (e) {
-            console.error('Error closing previous WebSocket:', e);
-        }
-    }
-
-    const parsedUrl = parseComfyUrl(config.comfyUrl);
-    const wsProtocol = parsedUrl.protocol === 'https' ? 'wss' : 'ws';
-    const wsUrl = `${wsProtocol}://${parsedUrl.hostname}:${parsedUrl.port}/ws?clientId=${clientId}`;
-    
-    console.log(`Connecting to ComfyUI at: ${wsUrl}`);
-    broadcastToClients({ type: 'connection_status', status: 'connecting', url: config.comfyUrl });
-    
-    wsComfy = new WebSocket(wsUrl);
-    
-    wsComfy.on('open', () => {
-        console.log('✓ WebSocket connection established with ComfyUI');
-        console.log(`✓ WebSocket ready state: ${wsComfy.readyState}`);
-        broadcastToClients({ 
-            type: 'connection_status', 
-            status: 'connected', 
-            url: config.comfyUrl,
-            message: 'Conectado exitosamente a ComfyUI'
-        });
-    });
-    
-    wsComfy.on('error', (error) => {
-        const errorMsg = error.message || 'Error desconocido';
-        console.error('✗ WebSocket error:', errorMsg);
-        broadcastToClients({ 
-            type: 'connection_status', 
-            status: 'error', 
-            url: config.comfyUrl,
-            error: errorMsg,
-            message: `Error al conectar a ComfyUI: ${errorMsg}`
-        });
-    });
-    
-    wsComfy.on('close', (code, reason) => {
-        console.log(`WebSocket connection closed. Code: ${code}, Reason: ${reason || 'No reason'}`);
-        broadcastToClients({ 
-            type: 'connection_status', 
-            status: 'disconnected', 
-            url: config.comfyUrl,
-            message: 'Desconectado de ComfyUI'
-        });
-    });
-    
-    setupComfyWebSocketHandlers();
-}
-
-// Función para enviar mensajes a todos los clientes conectados
-function broadcastToClients(message) {
-    wss.clients.forEach(client => {
-        if (client.readyState === WebSocket.OPEN) {
-            try {
-                client.send(JSON.stringify(message));
-            } catch (e) {
-                console.error('Error broadcasting to client:', e);
-            }
-        }
-    });
-}
-
-function setupComfyWebSocketHandlers() {
-    wsComfy.on('message', async (data) => {
-        const messageString = data.toString();
-        console.log('WebSocket message received:', messageString);
-
-        const message = JSON.parse(messageString);
-
-        // Manejar progreso de ejecución
-        if (message.type === 'progress') {
-            const value = message.data.value;
-            const max = message.data.max;
-            const percent = Math.round((value / max) * 100);
-            
-            console.log(`Progress: ${value}/${max} (${percent}%)`);
-            
-            broadcastToClients({
-                type: 'generation_progress',
-                value: value,
-                max: max,
-                percent: percent,
-                message: `⚙️ Generando: Step ${value}/${max}`
-            });
-        }
-        
-        // Manejar ejecución iniciada
-        if (message.type === 'executing') {
-            if (message.data.node) {
-                console.log(`Executing node: ${message.data.node}`);
-                broadcastToClients({
-                    type: 'generation_status',
-                    status: 'executing',
-                    message: '🎨 ComfyUI procesando...'
-                });
-            }
-        }
-
-        if (message.type === 'executed') {
-            const details = promptDetails[message.data.prompt_id];
-            console.log(`Execution completed for prompt ID: ${message.data.prompt_id}`);
-
-            const images = message.data.output.images;
-            console.log('Images:', images);
-
-            for (const image of images) {
-                const subfolder = '';
-                const parsedUrl = parseComfyUrl(config.comfyUrl);
-                const imageUrl = `${parsedUrl.baseUrl}/view?filename=${encodeURIComponent(image.filename)}&subfolder=${encodeURIComponent(subfolder)}&type=${encodeURIComponent(image.type)}`;
-                console.log('Downloading image from:', imageUrl);
-                
-                // Notificar que está descargando
-                broadcastToClients({
-                    type: 'generation_status',
-                    status: 'downloading',
-                    message: '📥 Descargando imagen desde ComfyUI...'
-                });
-                
-                const filename = path.join(__dirname, 'public', 'imagenes', subfolder, image.filename);
-                await downloadImage(imageUrl, filename, subfolder);
-                console.log(`Downloaded image: ${filename}`);
-
-                wss.clients.forEach(client => {
-                    if (client.readyState === WebSocket.OPEN) {
-                        const imagePath = subfolder ? `/imagenes/${subfolder}/${image.filename}` : `/imagenes/${image.filename}`;
-                        // HARDCODED: Siempre usar la URL absoluta del VPS
-                        const imageUrl = `https://vps-4455523-x.dattaweb.com/comfyweb${imagePath}`;
-                        console.log(`📤 Sending image URL to client: ${imageUrl}`);
-                        client.send(JSON.stringify({
-                            type: 'image_generated',
-                            url: imageUrl,
-                            prompt: details.prompt
-                        }));
-                    }
-                });
-            }
-        }
-    });
-}
-
 const app = express();
+const http = require('http').createServer(app);
+const path = require('path');
+const cors = require('cors');
+const mongoose = require('mongoose');
+const cookieParser = require('cookie-parser');
+const { Server } = require('socket.io');
 
-// Configurar subpath para producción (cuando se accede desde /comfyweb)
-const BASE_PATH = process.env.BASE_PATH || '';
-const PUBLIC_URL = process.env.PUBLIC_URL || '';
+const config = require('./config/database');
+const hub = require('./lib/hub');
+const jobsLib = require('./lib/jobs');
+const { fscUser } = require('./middleware/auth');
 
+const PORT = process.env.PORT || 8085;
+const BASE_PATH = process.env.BASE_PATH || '/comfyweb';
+const AGENT_TOKEN = process.env.AGENT_TOKEN || '';
+const NODE_ENV = process.env.NODE_ENV || 'local';
+
+// --- CORS: el front vive en el FTP y la API en el VPS -------------------
+const ORIGENES_FSC = [
+    'https://fullscreencode.com', 'https://www.fullscreencode.com',
+    'https://artedigitaldata.com', 'https://www.artedigitaldata.com',
+    'https://exporural.com', 'https://www.exporural.com',
+    'https://exporuralsanjuan.com', 'https://www.exporuralsanjuan.com',
+    'https://vuelapelucas3000.com', 'https://www.vuelapelucas3000.com',
+    'https://vuelapelucas3000.com.ar', 'https://www.vuelapelucas3000.com.ar',
+    'https://vps-4455523-x.dattaweb.com'
+];
+const esOrigenLocal = (o) => /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(String(o || ''));
+
+app.use(cors({
+    origin: (origin, cb) => {
+        if (!origin) return cb(null, true);
+        if (ORIGENES_FSC.includes(origin) || esOrigenLocal(origin)) return cb(null, true);
+        return cb(null, false);
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'x-agent-token'],
+    credentials: true
+}));
+app.options('*', cors());
+
+// --- CSP -----------------------------------------------------------------
+app.use((req, res, next) => {
+    res.setHeader('Content-Security-Policy', [
+        "default-src 'self'",
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://vps-4455523-x.dattaweb.com https://fullscreencode.com",
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+        "font-src 'self' https://fonts.gstatic.com data:",
+        "img-src 'self' data: blob: https://fullscreencode.com https://vps-4455523-x.dattaweb.com https://pub-6289669d41aa4adc9b90385dbd269b1f.r2.dev",
+        "media-src 'self' blob: https://vps-4455523-x.dattaweb.com https://pub-6289669d41aa4adc9b90385dbd269b1f.r2.dev",
+        "connect-src 'self' https://fullscreencode.com https://vps-4455523-x.dattaweb.com wss://vps-4455523-x.dattaweb.com",
+        "worker-src 'self' blob:",
+        "frame-ancestors 'self' https://fullscreencode.com"
+    ].join('; '));
+    next();
+});
+
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
+
+// --- Compatibilidad de path detras de nginx ------------------------------
+// El bloque nginx de /comfyweb/ usa proxy_pass con barra final, o sea que
+// puede llegar /socket.io (sin prefijo) o /comfyweb/socket.io. socket.io
+// solo acepta UN path, asi que normalizamos aca: express corre primero
+// sobre el evento 'request' y deja la url como la espera el engine.
+app.use((req, res, next) => {
+    if (req.url.startsWith(BASE_PATH + '/socket.io')) {
+        req.url = req.url.slice(BASE_PATH.length);
+    }
+    next();
+});
+
+// --- Estaticos (con y sin BASE_PATH) ------------------------------------
 app.use(BASE_PATH, express.static(path.join(__dirname, 'public')));
-app.use(bodyParser.json());
+app.use(express.static(path.join(__dirname, 'public')));
 
-const port = 8085;
-const server = http.createServer(app);
-server.listen(port, () => {
-    console.log(`Server is running on http://localhost:${port}`);
-    console.log(`BASE_PATH: ${BASE_PATH}`);
-    console.log(`PUBLIC_URL: ${PUBLIC_URL || '(not set - using relative paths)'}`);
+// --- Rutas ---------------------------------------------------------------
+// auth: puente al SSO central (fscauth). No hay login propio.
+app.use(BASE_PATH + '/api/auth', require('./routes/auth'));
+app.use('/api/auth', require('./routes/auth'));
+const jobsRouter = require('./routes/jobs');
+app.use(BASE_PATH + '/api', jobsRouter);
+app.use('/api', jobsRouter);
+
+app.get([BASE_PATH, BASE_PATH + '/', '/'], (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-const io = require('socket.io')(server);
+app.get(['/health', BASE_PATH + '/health'], (req, res) => {
+    res.json({
+        status: 'ok',
+        app: 'comfyweb',
+        version: '1.0.0',
+        basePath: BASE_PATH,
+        agente: !!hub.state.agent,
+        comfy: !!hub.state.agentInfo.comfyConnected,
+        mongo: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+        env: NODE_ENV
+    });
+});
 
-const wss = new WebSocket.Server({ server });
-const promptDetails = {};  // Almacena detalles del prompt
-
-// Conectar a ComfyUI después de que el servidor esté listo
-setTimeout(() => {
-    connectToComfyUI();
-}, 1000);
-
-wss.on('connection', async (ws, req) => {
-    console.log('WebSocket client connected');
-    
-    // Enviar estado actual de conexión al nuevo cliente
-    if (wsComfy && wsComfy.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-            type: 'connection_status',
-            status: 'connected',
-            url: config.comfyUrl,
-            message: 'Conectado a ComfyUI'
-        }));
+// --- Fallback SPA --------------------------------------------------------
+app.get('*', (req, res) => {
+    if (req.path.startsWith('/api/') || req.path.startsWith(BASE_PATH + '/api/')) {
+        return res.status(404).json({ success: false, message: 'Not found' });
     }
-    
-    ws.on('message', async (data) => {
-        const message = JSON.parse(data);
-        if (message.type === 'generarImagen') {
-            console.log(`📥 Prompt received: ${message.prompt}`);
-            console.log(`📊 Parámetros:`, message.params);
-            
-            // Notificar al cliente que se está procesando
-            ws.send(JSON.stringify({
-                type: 'generation_status',
-                status: 'queued',
-                message: '🔄 Prompt en cola para procesamiento'
-            }));
-            
-            try {
-                const params = message.params || {};
-                const promptId = await generarImagen(message.prompt, params);
-                promptDetails[promptId] = { prompt: message.prompt, ws: ws }; // Guarda prompt y websocket
-                
-                console.log(`✓ Prompt queued with ID: ${promptId}`);
-                console.log(`🔍 WebSocket ComfyUI state: ${wsComfy ? wsComfy.readyState : 'null'} (1=OPEN, 0=CONNECTING, 2=CLOSING, 3=CLOSED)`);
-                ws.send(JSON.stringify({
-                    type: 'generation_status',
-                    status: 'processing',
-                    promptId: promptId,
-                    message: '⚙️ ComfyUI está generando la imagen...'
-                }));
-            } catch (error) {
-                console.error('❌ Error queuing prompt:', error);
-                ws.send(JSON.stringify({
-                    type: 'generation_status',
-                    status: 'error',
-                    message: '❌ Error al enviar prompt a ComfyUI: ' + error.message
-                }));
-            }
-        }
-    });
-    ws.on('close', () => {
-        console.log('WebSocket client disconnected');
-    });
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-io.on('connection', function(socket) {
-    console.log('SOCKET IO');
-    socket.on('slider change', function(data) {
-        console.log('Slider value received: ', data);
-        socket.broadcast.emit('slider update', data);
-    });
-    socket.on('disconnect', function() {
-        console.log('User disconnected');
-    });
+// ======================= SOCKET.IO ======================================
+const io = new Server(http, {
+    path: BASE_PATH + '/socket.io',
+    cors: {
+        origin: (origin, cb) => {
+            if (!origin) return cb(null, true);
+            if (ORIGENES_FSC.includes(origin) || esOrigenLocal(origin)) return cb(null, true);
+            return cb(null, false);
+        },
+        methods: ['GET', 'POST'],
+        credentials: true
+    },
+    maxHttpBufferSize: 1e6
 });
+hub.state.io = io;
 
-// API endpoints para configuración
-app.get(BASE_PATH + '/api/config', (req, res) => {
-    res.json(config);
-});
-
-// Endpoint para obtener modelos disponibles
-app.get(BASE_PATH + '/api/models', async (req, res) => {
-    try {
-        const parsedUrl = parseComfyUrl(config.comfyUrl);
-        const httpModule = getHttpModule(config.comfyUrl);
-        
-        const options = {
-            hostname: parsedUrl.hostname,
-            port: parsedUrl.port,
-            path: '/object_info',
-            method: 'GET'
-        };
-        
-        const request = httpModule.request(options, (response) => {
-            let data = '';
-            response.on('data', (chunk) => {
-                data += chunk;
-            });
-            response.on('end', () => {
-                try {
-                    const objectInfo = JSON.parse(data);
-                    const checkpointLoader = objectInfo.CheckpointLoaderSimple;
-                    if (checkpointLoader && checkpointLoader.input && checkpointLoader.input.required) {
-                        const models = checkpointLoader.input.required.ckpt_name[0];
-                        res.json({ success: true, models });
-                    } else {
-                        res.json({ success: false, error: 'No se pudo obtener la lista de modelos' });
-                    }
-                } catch (e) {
-                    res.json({ success: false, error: 'Error al parsear respuesta: ' + e.message });
-                }
-            });
-        });
-        
-        request.on('error', (error) => {
-            res.json({ success: false, error: error.message });
-        });
-        
-        request.end();
-    } catch (error) {
-        res.json({ success: false, error: error.message });
+// --- Navegadores (namespace raiz) ---------------------------------------
+io.on('connection', async (socket) => {
+    const token = (socket.handshake.auth && socket.handshake.auth.token)
+        || socket.handshake.query.token
+        || '';
+    let usuario = null;
+    if (token) {
+        try {
+            usuario = await fscUser({ headers: { authorization: 'Bearer ' + token }, query: {} });
+        } catch (e) { /* sin sesion: sigue como anonimo */ }
     }
-});
+    if (usuario && usuario.id) socket.join('user:' + usuario.id);
 
-app.post(BASE_PATH + '/api/config', (req, res) => {
-    const newConfig = req.body;
-    if (!newConfig.comfyUrl) {
-        return res.status(400).json({ error: 'comfyUrl is required' });
-    }
-    
-    config = newConfig;
-    if (saveConfig(config)) {
-        // Reconectar con la nueva configuración
-        connectToComfyUI();
-        res.json({ success: true, config });
-    } else {
-        res.status(500).json({ error: 'Failed to save configuration' });
-    }
-});
+    socket.emit('agent:status', hub.statusNavegador());
 
-async function readWorkflowAPI() {
-    const data = await fs.promises.readFile(path.join(__dirname, 'workflow_api.json'), 'utf8');
-    return JSON.parse(data);
-}
-
-async function uploadImage(filePath) {
-    const formData = new FormData();
-    formData.append('image', fs.createReadStream(filePath));
-
-    const parsedUrl = parseComfyUrl(config.comfyUrl);
-    const httpModule = getHttpModule(config.comfyUrl);
-    
-    const options = {
-        hostname: parsedUrl.hostname,
-        port: parsedUrl.port,
-        path: '/upload/image',
-        method: 'POST',
-        headers: formData.getHeaders()
-    };
-
-    return new Promise((resolve, reject) => {
-        const req = httpModule.request(options, (res) => {
-            let data = '';
-            res.on('data', (chunk) => { data += chunk; });
-            res.on('end', () => {
-                resolve(JSON.parse(data));
-            });
-        });
-        req.on('error', (e) => reject(e));
-        formData.pipe(req);
-    });
-}
-
-async function queuePrompt(promptWorkflow) {
-    const postData = JSON.stringify({ prompt: promptWorkflow, client_id: clientId });
-    const parsedUrl = parseComfyUrl(config.comfyUrl);
-    const httpModule = getHttpModule(config.comfyUrl);
-    
-    const options = {
-        hostname: parsedUrl.hostname,
-        port: parsedUrl.port,
-        path: '/prompt',
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Content-Length': Buffer.byteLength(postData)
-        }
-    };
-
-    return new Promise((resolve, reject) => {
-        const req = httpModule.request(options, (res) => {
-            let data = '';
-            res.on('data', (chunk) => { data += chunk; });
-            res.on('end', () => {
-                resolve(JSON.parse(data).prompt_id);
-            });
-        });
-        req.on('error', (e) => reject(e));
-        req.write(postData);
-        req.end();
-    });
-}
-
-async function getHistory(promptId) {
-    const parsedUrl = parseComfyUrl(config.comfyUrl);
-    const httpModule = getHttpModule(config.comfyUrl);
-    const url = `${parsedUrl.baseUrl}/history/${promptId}`;
-    
-    return new Promise((resolve, reject) => {
-        httpModule.get(url, (res) => {
-            let data = '';
-            res.on('data', (chunk) => {
-                data += chunk;
-            });
-            res.on('end', () => {
-                resolve(JSON.parse(data));
-            });
-        }).on('error', (err) => {
-            reject(err);
-        });
-    });
-}
-
-async function downloadImage(url, filename, subfolder) {
-    return new Promise((resolve, reject) => {
-        const dir = path.dirname(filename);
-
-        if (!fs.existsSync(dir)) {
-            fs.mkdirSync(dir, { recursive: true });
-        }
-
-        const filePath = filename;
-        const file = fs.createWriteStream(filePath);
-        const httpModule = getHttpModule(url);
-        
-        httpModule.get(url, (response) => {
-            response.pipe(file);
-            file.on('finish', () => {
-                file.close(resolve);
-            });
-        }).on('error', (err) => {
-            fs.unlink(filePath, () => reject(err));
-        });
-    });
-}
-async function generarImagen_old(promptText) {
-    const promptWorkflow = await readWorkflowAPI();
-	console.log("PROMPT WORKFLOW" + promptWorkflow)
-    promptWorkflow["6"]["inputs"]["text"] = promptText;
-    promptWorkflow["3"]["inputs"]["seed"] = Math.floor(Math.random() * 18446744073709551614) + 1;
-    const emptyLatentImgNode = promptWorkflow["5"];
-    emptyLatentImgNode["inputs"]["batch_size"] = 1;
-
-    promptWorkflow["9"]["inputs"]["filename_prefix"] = "ComfyUI";
-
-    const promptId = await queuePrompt(promptWorkflow);
-}
-
-// Función para validar si un modelo existe
-async function validateModel(modelName) {
-    try {
-        const parsedUrl = parseComfyUrl(config.comfyUrl);
-        const httpModule = getHttpModule(config.comfyUrl);
-        
-        return new Promise((resolve) => {
-            const options = {
-                hostname: parsedUrl.hostname,
-                port: parsedUrl.port,
-                path: '/object_info',
-                method: 'GET'
+    // Enviar el trabajo al videocomfy local.
+    socket.on('job:submit', async (payload) => {
+        try {
+            const user = usuario || {
+                id: (payload && payload.userId) || '',
+                username: (payload && payload.username) || '',
+                email: ''
             };
-            
-            const request = httpModule.request(options, (response) => {
-                let data = '';
-                response.on('data', (chunk) => {
-                    data += chunk;
+            const { job, despachado } = await jobsLib.crearJob(payload, user);
+            io.emit('job:update', { job });
+            if (!despachado) {
+                socket.emit('job:log', {
+                    jobId: String(job._id),
+                    line: 'El agente local no está conectado: el trabajo quedó en cola.'
                 });
-                response.on('end', () => {
-                    try {
-                        const objectInfo = JSON.parse(data);
-                        const checkpointLoader = objectInfo.CheckpointLoaderSimple;
-                        if (checkpointLoader && checkpointLoader.input && checkpointLoader.input.required) {
-                            const models = checkpointLoader.input.required.ckpt_name[0];
-                            const exists = models.includes(modelName);
-                            resolve({ exists, availableModels: models });
-                        } else {
-                            resolve({ exists: false, availableModels: [] });
-                        }
-                    } catch (e) {
-                        resolve({ exists: false, availableModels: [] });
-                    }
-                });
-            });
-            
-            request.on('error', () => {
-                resolve({ exists: false, availableModels: [] });
-            });
-            
-            request.end();
-        });
-    } catch (error) {
-        return { exists: false, availableModels: [] };
-    }
-}
-
-async function generarImagen(promptText, params = {}) {
-    const promptWorkflow = await readWorkflowAPI();
-    
-    // Parámetros por defecto
-    const steps = params.steps || 6;
-    const width = params.width || 512;
-    const height = params.height || 512;
-    const seed = params.seed || Math.floor(Math.random() * 18446744073709551614) + 1;
-    const model = params.model || 'realvisxl.safetensors';
-    
-    console.log(`🎨 Generando imagen con parámetros:`, { promptText, steps, width, height, seed, model });
-    
-    // Validar si el modelo existe
-    const modelValidation = await validateModel(model);
-    if (!modelValidation.exists) {
-        console.error(`❌ Modelo "${model}" no encontrado en ComfyUI`);
-        console.log(`📋 Modelos disponibles:`, modelValidation.availableModels.slice(0, 5).join(', '));
-        
-        // Notificar al cliente
-        broadcastToClients({
-            type: 'generation_status',
-            status: 'error',
-            message: `❌ Modelo "${model}" no encontrado. Usando modelo por defecto.`
-        });
-        
-        // Usar el primer modelo disponible como fallback
-        if (modelValidation.availableModels.length > 0) {
-            promptWorkflow["4"]["inputs"]["ckpt_name"] = modelValidation.availableModels[0];
-            console.log(`✓ Usando modelo fallback: ${modelValidation.availableModels[0]}`);
+            }
+        } catch (err) {
+            socket.emit('generation_error', { error: err.message });
         }
-    } else {
-        console.log(`✓ Modelo "${model}" encontrado`);
-        promptWorkflow["4"]["inputs"]["ckpt_name"] = model;
-        
-        broadcastToClients({
-            type: 'generation_status',
-            status: 'info',
-            message: `✓ Usando modelo: ${model}`
-        });
+    });
+
+    socket.on('job:cancel', async (data) => {
+        const jobId = (data && data.jobId) || data;
+        const Job = require('./models/Job');
+        const job = await Job.findById(jobId).catch(() => null);
+        if (job) {
+            await jobsLib.cancelar(job);
+            io.emit('job:update', { job });
+        }
+    });
+
+    socket.on('status:request', () => socket.emit('agent:status', hub.statusNavegador()));
+});
+
+// --- Puente local (namespace /agent) -----------------------------------
+const nspAgente = io.of('/agent');
+
+nspAgente.use((socket, next) => {
+    const t = (socket.handshake.auth && socket.handshake.auth.token) || socket.handshake.query.token || '';
+    if (!AGENT_TOKEN) return next(new Error('AGENT_TOKEN no configurado en el servidor'));
+    if (String(t) !== AGENT_TOKEN) return next(new Error('token de agente invalido'));
+    return next();
+});
+
+nspAgente.on('connection', async (socket) => {
+    hub.state.agent = socket;
+    console.log('🔌 Puente local conectado:', socket.id);
+    hub.emitirEstadoAgente();
+
+    // Despachar lo que haya quedado encolado mientras no había puente.
+    try {
+        const n = await jobsLib.despacharPendientes();
+        if (n) console.log(`⏩ ${n} trabajo(s) encolado(s) despachados al puente`);
+    } catch (e) {
+        console.warn('No pude despachar pendientes:', e.message);
     }
-    
-    // Configurar parámetros del workflow
-    promptWorkflow["6"]["inputs"]["text"] = promptText;
-    promptWorkflow["3"]["inputs"]["seed"] = seed;
-    promptWorkflow["3"]["inputs"]["steps"] = steps;
-    promptWorkflow["5"]["inputs"]["width"] = width;
-    promptWorkflow["5"]["inputs"]["height"] = height;
-    promptWorkflow["5"]["inputs"]["batch_size"] = 1;
-    promptWorkflow["9"]["inputs"]["filename_prefix"] = "ComfyUI";
 
-    const promptId = await queuePrompt(promptWorkflow);
+    // Mensajes crudos del videocomfy local.
+    socket.on('tunnel:event', async (msg) => {
+        try {
+            await jobsLib.procesarEventoPuente(msg);
+        } catch (e) {
+            console.error('Error procesando evento del puente:', e.message);
+        }
+    });
 
-    console.log(`✓ Prompt en cola con ID: ${promptId}`);
-    return promptId;
+    // Respuesta de subida de imagen de referencia.
+    socket.on('tunnel:upload:result', (data) => {
+        if (data && data.reqId) jobsRouter.resolverSubida(data.reqId, data);
+    });
+
+    socket.on('agent:hello', (info) => {
+        const b = info || {};
+        hub.state.agentInfo = Object.assign(hub.state.agentInfo, {
+            host: String(b.host || ''),
+            platform: String(b.platform || ''),
+            videocomfyUrl: String(b.videocomfyUrl || ''),
+            comfyConnected: !!b.comfyConnected,
+            comfyVersion: String((b.comfy && b.comfy.comfyui_version) || ''),
+            device: String((b.comfy && (b.comfy.device || b.comfy.gpu)) || ''),
+            workflows: Array.isArray(b.workflows) ? b.workflows : []
+        });
+        console.log('ℹ️ Puente local:', hub.state.agentInfo.host || 'PC', '| videocomfy:', hub.state.agentInfo.videocomfyUrl);
+        hub.emitirEstadoAgente();
+    });
+
+    socket.on('agent:log', (line) => console.log('[puente]', line));
+
+    socket.on('disconnect', (motivo) => {
+        if (hub.state.agent && hub.state.agent.id === socket.id) {
+            hub.state.agent = null;
+            hub.state.agentInfo.comfyConnected = false;
+            console.log('❌ Puente local desconectado:', motivo);
+            hub.emitirEstadoAgente();
+        }
+    });
+});
+
+// ======================= ARRANQUE =======================================
+async function startServer() {
+    http.listen(PORT, '0.0.0.0', () => {
+        console.log('\n===========================================');
+        console.log(`✅ comfyweb corriendo en el puerto ${PORT}`);
+        console.log(`   Local: http://localhost:${PORT}${BASE_PATH}/`);
+        console.log('===========================================\n');
+    });
+
+    try {
+        await mongoose.connect(config.mongoURI, { serverSelectionTimeoutMS: 5000 });
+        console.log('✅ MongoDB conectado:', config.mongoURI);
+    } catch (err) {
+        console.error('❌ MongoDB error (el server sigue arriba):', err.message);
+    }
 }
+
+process.on('SIGTERM', () => { http.close(); mongoose.connection.close(); process.exit(0); });
+process.on('SIGINT', () => { http.close(); mongoose.connection.close(); process.exit(0); });
+
+startServer();

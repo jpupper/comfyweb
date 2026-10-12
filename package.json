@@ -1,9 +1,28 @@
 {
+  "name": "comfyweb",
+  "version": "1.0.0",
+  "description": "ComfyWeb - UI web remota del videocomfy local (genera imágenes y videos con el ComfyUI de la PC) dentro del ecosistema Fullscreen",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "agent": "node agent/videocomfy-bridge.js"
+  },
   "dependencies": {
-    "express": "^4.19.2",
-    "form-data": "^4.0.0",
-    "socket.io": "^4.7.5",
-    "uuid": "^10.0.0",
-    "ws": "^8.17.1"
+    "@aws-sdk/client-s3": "^3.600.0",
+    "@aws-sdk/lib-storage": "^3.600.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.0",
+    "mongoose": "^7.3.1",
+    "multer": "^2.0.0",
+    "node-fetch": "^2.6.7",
+    "socket.io": "^4.7.5"
+  },
+  "devDependencies": {
+    "basic-ftp": "^5.0.3",
+    "nodemon": "^3.0.1"
   }
 }

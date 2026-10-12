@@ -1,0 +1,16 @@
+{
+  "name": "comfyweb-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Puente local: conecta el comfyweb del VPS con el videocomfy que corre en esta PC (ws://127.0.0.1:5634)",
+  "main": "videocomfy-bridge.js",
+  "scripts": {
+    "start": "node videocomfy-bridge.js",
+    "dev": "nodemon videocomfy-bridge.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "socket.io-client": "^4.7.5",
+    "ws": "^8.18.0"
+  }
+}
