@@ -277,8 +277,14 @@ nspAgente.on('connection', async (socket) => {
     });
 });
 
-// 4) Express al final: si va antes, su catch-all se come el handshake.
-servidorHttp.on('request', app);
+// 4) Express al final, y con guarda: si el request es de socket.io ya lo
+//    atendio engine.io, asi que express NO debe tocarlo. Si corre igual,
+//    expressInit intenta setHeader sobre una respuesta ya enviada y tira
+//    ERR_HTTP_HEADERS_SENT en cada handshake.
+servidorHttp.on('request', (req, res) => {
+    if (req.url && req.url.startsWith(BASE_PATH + '/socket.io')) return;
+    app(req, res);
+});
 
 async function startServer() {
     servidorHttp.listen(PORT, '0.0.0.0', () => {
